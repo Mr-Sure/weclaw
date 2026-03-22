@@ -1,0 +1,165 @@
+# WeClaw
+
+[English](README.md)
+
+微信 AI Agent 桥接器 — 通过 [iLink](https://www.ilink.wiki) API 将微信消息接入 AI 编程助手（Claude、Codex、Gemini、Kimi 等）。
+
+![预览](preview.png)
+
+## 架构
+
+```
+微信用户
+    │
+    ▼
+iLink API (长轮询)
+    │
+    ▼
+┌─────────────────────────────────┐
+│           WeClaw                │
+│                                 │
+│  Monitor ──► Handler ──► Agent  │
+│                │                │
+│                ▼                │
+│             Sender              │
+└─────────────────────────────────┘
+    │                         │
+    ▼                         ▼
+微信回复               AI Agent 进程
+                      (ACP / CLI / HTTP)
+```
+
+**Agent 接入模式：**
+
+| 模式 | 工作方式 | 支持的 Agent |
+|------|---------|-------------|
+| ACP  | 长驻子进程，通过 stdio JSON-RPC 通信。速度最快，复用进程和会话。 | Claude, Codex, Kimi, Gemini, Cursor, OpenCode, OpenClaw |
+| CLI  | 每条消息启动一个新进程，支持通过 `--resume` 恢复会话。 | Claude (`claude -p`)、Codex (`codex exec`) |
+| HTTP | OpenAI 兼容的 Chat Completions API。 | OpenClaw（HTTP 回退） |
+
+同时存在 ACP 和 CLI 时，自动优先选择 ACP。
+
+## 快速开始
+
+```bash
+# 安装
+go install github.com/fastclaw-ai/weclaw@latest
+
+# 启动（首次运行会弹出微信扫码登录）
+weclaw start
+```
+
+首次启动时，WeClaw 会弹出二维码进行微信登录，然后自动检测已安装的 Agent，将配置保存到 `~/.weclaw/config.json`。使用 `weclaw login` 可以添加更多微信账号。
+
+## 聊天命令
+
+在微信中发送以下命令：
+
+### 对话
+
+```
+你好                       # 发送给默认 Agent
+/codex 写一个排序函数       # 发送给 Codex
+/cc 解释一下这段代码        # 发送给 Claude（别名）
+```
+
+### 切换默认 Agent
+
+```
+/claude       # 切换到 Claude
+/codex        # 切换到 Codex
+/gemini       # 切换到 Gemini
+```
+
+切换会写入配置文件，重启后仍然生效。
+
+### 查看状态
+
+```
+/status       # 显示当前 Agent、类型和模型
+```
+
+### 快捷别名
+
+| 别名 | Agent |
+|------|-------|
+| `/cc` | Claude |
+| `/cx` | Codex |
+| `/cs` | Cursor |
+| `/km` | Kimi |
+| `/gm` | Gemini |
+| `/ocd` | OpenCode |
+| `/oc` | OpenClaw |
+
+## 配置
+
+配置文件路径：`~/.weclaw/config.json`
+
+```json
+{
+  "default_agent": "claude",
+  "agents": {
+    "claude": {
+      "type": "acp",
+      "command": "/usr/local/bin/claude-agent-acp",
+      "model": "sonnet"
+    },
+    "codex": {
+      "type": "cli",
+      "command": "/usr/local/bin/codex"
+    },
+    "openclaw": {
+      "type": "http",
+      "endpoint": "https://api.example.com/v1/chat/completions",
+      "api_key": "sk-xxx",
+      "model": "openclaw:main"
+    }
+  }
+}
+```
+
+环境变量：
+- `WECLAW_DEFAULT_AGENT` — 覆盖默认 Agent
+- `OPENCLAW_GATEWAY_URL` — OpenClaw HTTP 回退地址
+- `OPENCLAW_GATEWAY_TOKEN` — OpenClaw API Token
+
+## Docker
+
+```bash
+# 构建
+docker build -t weclaw .
+
+# 登录（交互式，扫描二维码）
+docker run -it -v ~/.weclaw:/root/.weclaw weclaw login
+
+# 使用 HTTP Agent 启动
+docker run -d --name weclaw \
+  -v ~/.weclaw:/root/.weclaw \
+  -e OPENCLAW_GATEWAY_URL=https://api.example.com \
+  -e OPENCLAW_GATEWAY_TOKEN=sk-xxx \
+  weclaw
+
+# 查看日志
+docker logs -f weclaw
+```
+
+> 注意：ACP 和 CLI 模式需要容器内有对应的 Agent 二进制文件。
+> 默认镜像只包含 WeClaw 本体。如需使用 ACP/CLI Agent，请挂载二进制文件或构建自定义镜像。
+> HTTP 模式开箱即用。
+
+## 开发
+
+```bash
+# 热重载
+make dev
+
+# 编译
+go build -o weclaw .
+
+# 运行
+./weclaw start
+```
+
+## 许可证
+
+[MIT](LICENSE)
